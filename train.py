@@ -129,6 +129,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-train-samples", type=int, default=None)
     parser.add_argument("--max-eval-samples", type=int, default=None)
     parser.add_argument("--early-stop-patience-epochs", type=int, default=None)
+    parser.add_argument("--streaming", action="store_true")
     return parser.parse_args()
 
 
@@ -352,14 +353,29 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     use_cuda = torch.cuda.is_available()
     runtime = runtime_for_stage(args.stage, runtime, use_cuda)
+    use_streaming = bool(args.streaming or (args.stage == "supervised" and getattr(runtime, "profile", None) == "colab_t4"))
 
     cache_dir = args.cache_dir or runtime.cache_root
     dataset = (
         load_waxal_asr_dataset(args.dataset_name, args.dataset_config, cache_dir=cache_dir)
         if args.stage == "self_train"
         else {
-            "train": load_asr_split(args.dataset_name, args.dataset_config, split="train", cache_dir=cache_dir),
-            "validation": load_asr_split(args.dataset_name, args.dataset_config, split="validation", cache_dir=cache_dir),
+            "train": load_asr_split(
+                args.dataset_name,
+                args.dataset_config,
+                split="train",
+                cache_dir=cache_dir,
+                streaming=use_streaming,
+                materialize_limit=args.max_train_samples,
+            ),
+            "validation": load_asr_split(
+                args.dataset_name,
+                args.dataset_config,
+                split="validation",
+                cache_dir=cache_dir,
+                streaming=use_streaming,
+                materialize_limit=args.max_eval_samples,
+            ),
         }
     )
 

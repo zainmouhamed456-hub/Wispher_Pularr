@@ -7,8 +7,8 @@ DATASET_CONFIG="${3:-ful_asr}"
 MODEL_ID="${4:-openai/whisper-small}"
 TEACHER_MODEL="${5:-openai/whisper-large-v3}"
 WHISPER_LANGUAGE="${6:-}"
-AUX_DATASET_NAME="${7:-ngia/ASR_pulaar}"
-AUX_DATASET_CONFIG="${8:-default}"
+AUX_DATASET_NAME="${7:-}"
+AUX_DATASET_CONFIG="${8:-}"
 
 export HF_HOME="${HF_HOME:-/content/hf-cache}"
 export TRANSFORMERS_CACHE="${TRANSFORMERS_CACHE:-$HF_HOME/transformers}"
@@ -41,10 +41,13 @@ python train.py \
   --dataset-name "$DATASET_NAME" \
   --dataset-config "$DATASET_CONFIG" \
   --model-id "$MODEL_ID" \
+  --streaming \
   "${WHISPER_LANGUAGE_ARGS[@]}" \
   "${AUX_ARGS[@]}" \
-  --num-train-epochs "${COLAB_SUPERVISED_EPOCHS:-6}" \
+  --num-train-epochs "${COLAB_SUPERVISED_EPOCHS:-4}" \
   --early-stop-patience-epochs "${COLAB_EARLY_STOP_PATIENCE:-1}" \
+  --max-train-samples "${COLAB_MAX_TRAIN_SAMPLES:-12000}" \
+  --max-eval-samples "${COLAB_MAX_EVAL_SAMPLES:-1200}" \
   --save-total-limit 1 \
   --output-dir "$RUNS_ROOT/runs/colab_trial_a"
 

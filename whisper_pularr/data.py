@@ -4,6 +4,7 @@ import json
 import math
 import os
 from io import BytesIO
+from itertools import islice
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -48,6 +49,7 @@ def load_asr_split(
     split: str,
     cache_dir: str | None = None,
     streaming: bool = False,
+    materialize_limit: int | None = None,
 ) -> Dataset:
     _require_datasets()
     dataset = load_dataset(
@@ -58,7 +60,8 @@ def load_asr_split(
         **_load_dataset_kwargs(dataset_name, cache_dir=cache_dir),
     )
     if streaming:
-        rows = [dict(row) for row in dataset]
+        stream = dataset if materialize_limit is None else islice(dataset, max(int(materialize_limit), 0))
+        rows = [dict(row) for row in stream]
         materialized = Dataset.from_list(rows)
         return materialized.cast_column("audio", Audio(sampling_rate=DEFAULT_AUDIO_SAMPLING_RATE))
     return dataset.cast_column("audio", Audio(sampling_rate=DEFAULT_AUDIO_SAMPLING_RATE))
