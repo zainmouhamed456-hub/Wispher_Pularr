@@ -58,10 +58,10 @@ python train.py \
   --streaming \
   "${WHISPER_LANGUAGE_ARGS[@]}" \
   "${AUX_ARGS[@]}" \
-  --num-train-epochs "${COLAB_SUPERVISED_EPOCHS:-2}" \
+  --num-train-epochs "${COLAB_SUPERVISED_EPOCHS:-1}" \
   --early-stop-patience-epochs "${COLAB_EARLY_STOP_PATIENCE:-1}" \
-  --max-train-samples "${COLAB_MAX_TRAIN_SAMPLES:-1000}" \
-  --max-eval-samples "${COLAB_MAX_EVAL_SAMPLES:-100}" \
+  --max-train-samples "${COLAB_MAX_TRAIN_SAMPLES:-512}" \
+  --max-eval-samples "${COLAB_MAX_EVAL_SAMPLES:-64}" \
   --save-total-limit 1 \
   --output-dir "$RUNS_ROOT/runs/colab_trial_a"
 

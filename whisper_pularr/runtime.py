@@ -110,8 +110,8 @@ def _build_runtime_config(
         profile = "very_low_vram" if vram_gb > 0 else "cpu"
 
     if is_colab:
-        num_workers = 2
-        prefetch_factor = 2
+        num_workers = 0
+        prefetch_factor = 0
     else:
         num_workers = max(2, min(physical_cores // max(gpu_count, 1), 12))
         prefetch_factor = 4 if num_workers >= 8 else 2

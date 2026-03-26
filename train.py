@@ -358,6 +358,7 @@ def main() -> None:
     use_streaming = bool(args.streaming or (args.stage == "supervised" and getattr(runtime, "profile", None) == "colab_t4"))
     preprocess_batch_size = 4 if getattr(runtime, "profile", None) == "colab_t4" else 32
     preprocess_num_proc = None if getattr(runtime, "profile", None) != "colab_t4" else 1
+    use_trainer_eval = not (args.stage == "supervised" and getattr(runtime, "profile", None) == "colab_t4")
 
     cache_dir = args.cache_dir or runtime.cache_root
     dataset = (
@@ -459,21 +460,19 @@ def main() -> None:
             validation_for_trainer = validation_for_trainer.select(range(min(args.max_eval_samples, len(validation_for_trainer))))
         validation_for_full_eval = validation_for_full_eval.select(range(min(args.max_eval_samples, len(validation_for_full_eval))))
 
-    processed_validation = (
-        preprocess_split(
+    processed_validation = None
+    if validation_for_trainer is not None and use_trainer_eval:
+        processed_validation = preprocess_split(
             validation_for_trainer,
             processor,
             args.max_label_length,
             batch_size=preprocess_batch_size,
             num_proc=preprocess_num_proc,
         )
-        if validation_for_trainer is not None
-        else None
-    )
 
     data_collator = WhisperDataCollatorSpeechSeq2SeqWithPadding(processor=processor, model=model)
-    evaluation_strategy = "epoch" if args.stage == "supervised" else "no"
-    training_args = Seq2SeqTrainingArguments(
+    evaluation_strategy = "epoch" if args.stage == "supervised" and use_trainer_eval else "no"
+    training_args_kwargs = dict(
         output_dir=str(output_dir),
         per_device_train_batch_size=runtime.per_device_train_batch_size,
         per_device_eval_batch_size=runtime.per_device_eval_batch_size,
@@ -493,7 +492,6 @@ def main() -> None:
         logging_steps=runtime.logging_steps,
         dataloader_num_workers=runtime.dataloader_num_workers,
         dataloader_pin_memory=use_cuda,
-        dataloader_prefetch_factor=runtime.dataloader_prefetch_factor,
         bf16=runtime.bf16 if use_cuda else False,
         fp16=runtime.fp16 if use_cuda else False,
         gradient_checkpointing=bool(args.stage == "supervised"),
@@ -505,6 +503,9 @@ def main() -> None:
         greater_is_better=False,
         load_best_model_at_end=False,
     )
+    if int(runtime.dataloader_num_workers or 0) > 0:
+        training_args_kwargs["dataloader_prefetch_factor"] = runtime.dataloader_prefetch_factor
+    training_args = Seq2SeqTrainingArguments(**training_args_kwargs)
 
     callback = LongFormEvalAndStopCallback(
         processor=processor,
@@ -522,7 +523,7 @@ def main() -> None:
         eval_dataset=processed_validation,
         data_collator=data_collator,
         tokenizer=processor.feature_extractor,
-        compute_metrics=build_compute_metrics(processor) if processed_validation is not None else None,
+        compute_metrics=build_compute_metrics(processor) if processed_validation is not None and use_trainer_eval else None,
         callbacks=[callback],
     )
 
