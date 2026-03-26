@@ -266,7 +266,11 @@ def build_compute_metrics(processor: Any):
 def prepare_model_and_processor(model_name_or_path: str) -> tuple[Any, Any]:
     _require_train_runtime()
     processor = AutoProcessor.from_pretrained(model_name_or_path)
-    model = AutoModelForSpeechSeq2Seq.from_pretrained(model_name_or_path)
+    model = AutoModelForSpeechSeq2Seq.from_pretrained(
+        model_name_or_path,
+        low_cpu_mem_usage=True,
+        use_safetensors=True,
+    )
     return model, processor
 
 

@@ -93,10 +93,10 @@ def _build_runtime_config(
         logging_steps = 25
         profile = "mid_vram"
     elif vram_gb >= 14:
-        train_batch_size = 2
-        gradient_accumulation = 16
-        eval_batch_size = 4
-        pseudo_batch_size = 4
+        train_batch_size = 1 if is_colab else 2
+        gradient_accumulation = 32 if is_colab else 16
+        eval_batch_size = 1 if is_colab else 4
+        pseudo_batch_size = 1 if is_colab else 4
         save_steps = 125
         logging_steps = 10
         profile = "colab_t4" if is_colab else "low_vram"
@@ -131,7 +131,7 @@ def _build_runtime_config(
         dataloader_prefetch_factor=prefetch_factor,
         pseudo_label_batch_size=pseudo_batch_size,
         evaluation_batch_size=eval_batch_size,
-        generation_num_beams=5,
+        generation_num_beams=1 if is_colab else 5,
         save_steps=save_steps,
         logging_steps=logging_steps,
         use_multi_gpu=gpu_count > 1,

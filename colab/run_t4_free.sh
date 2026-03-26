@@ -60,8 +60,8 @@ python train.py \
   "${AUX_ARGS[@]}" \
   --num-train-epochs "${COLAB_SUPERVISED_EPOCHS:-1}" \
   --early-stop-patience-epochs "${COLAB_EARLY_STOP_PATIENCE:-1}" \
-  --max-train-samples "${COLAB_MAX_TRAIN_SAMPLES:-512}" \
-  --max-eval-samples "${COLAB_MAX_EVAL_SAMPLES:-64}" \
+  --max-train-samples "${COLAB_MAX_TRAIN_SAMPLES:-128}" \
+  --max-eval-samples "${COLAB_MAX_EVAL_SAMPLES:-16}" \
   --save-total-limit 1 \
   --output-dir "$RUNS_ROOT/runs/colab_trial_a"
 
