@@ -389,6 +389,25 @@ def main() -> None:
             ),
         }
     )
+    streaming_collection = {
+        "enabled": use_streaming,
+        "requested_train_samples": args.max_train_samples if args.stage != "self_train" else None,
+        "requested_eval_samples": args.max_eval_samples if args.stage != "self_train" else None,
+        "accepted_train_samples_after_streaming": len(dataset["train"]) if args.stage != "self_train" else None,
+        "accepted_eval_samples_after_streaming": len(dataset["validation"]) if args.stage != "self_train" else None,
+        "train_stream_exhausted_before_cap": bool(
+            use_streaming
+            and args.stage != "self_train"
+            and args.max_train_samples is not None
+            and len(dataset["train"]) < int(args.max_train_samples)
+        ),
+        "eval_stream_exhausted_before_cap": bool(
+            use_streaming
+            and args.stage != "self_train"
+            and args.max_eval_samples is not None
+            and len(dataset["validation"]) < int(args.max_eval_samples)
+        ),
+    }
 
     resolved_base_checkpoint = resolve_base_checkpoint(args.stage, args.base_checkpoint)
     model_source = resolved_base_checkpoint or args.model_id
@@ -475,6 +494,12 @@ def main() -> None:
         if validation_for_trainer is not None:
             validation_for_trainer = validation_for_trainer.select(range(min(args.max_eval_samples, len(validation_for_trainer))))
         validation_for_full_eval = validation_for_full_eval.select(range(min(args.max_eval_samples, len(validation_for_full_eval))))
+    streaming_collection.update(
+        {
+            "train_samples_after_final_filtering": len(train_split),
+            "validation_samples_after_final_filtering": len(validation_for_full_eval),
+        }
+    )
 
     processed_validation = None
     if validation_for_trainer is not None and use_trainer_eval:
@@ -556,6 +581,7 @@ def main() -> None:
     effective_config = {
         "args": vars(args),
         "runtime": runtime.to_dict(),
+        "streaming_collection": streaming_collection,
         "requested_whisper_language": args.whisper_language,
         "language": language,
         "forced_decoder_ids": None,
@@ -590,6 +616,7 @@ def main() -> None:
             "best_metrics": best_metrics_payload["metrics"],
             "best_epoch": callback.state.best_epoch,
             "trainer_metrics": train_metrics,
+            "streaming_collection": streaming_collection,
         }
         save_json(output_dir / "run_summary.json", summary)
 
