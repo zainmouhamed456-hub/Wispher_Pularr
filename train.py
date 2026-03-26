@@ -376,6 +376,7 @@ def main() -> None:
                 cache_dir=cache_dir,
                 streaming=use_streaming,
                 materialize_limit=args.max_train_samples,
+                max_duration_seconds=args.max_train_duration_seconds if use_streaming else None,
             ),
             "validation": load_asr_split(
                 args.dataset_name,
@@ -384,6 +385,7 @@ def main() -> None:
                 cache_dir=cache_dir,
                 streaming=use_streaming,
                 materialize_limit=args.max_eval_samples,
+                max_duration_seconds=args.max_train_duration_seconds if use_streaming else None,
             ),
         }
     )
@@ -434,6 +436,11 @@ def main() -> None:
             labeled_repeat_count=labeled_repeat_count,
         )
         train_split = normalize_supervised_split_schema(train_split)
+        if len(train_split) == 0:
+            raise SystemExit(
+                "No supervised training samples remained after filtering. "
+                "Increase COLAB_MAX_TRAIN_SAMPLES or relax --max-train-duration-seconds."
+            )
         reference_train_size = len(train_split)
         auxiliary_train = load_auxiliary_train_split(
             aux_dataset_name=args.aux_dataset_name,
@@ -455,6 +462,11 @@ def main() -> None:
         )
         validation_for_trainer = filter_by_max_duration(dataset["validation"], args.max_train_duration_seconds)
     validation_for_full_eval = dataset["validation"]
+    if len(validation_for_full_eval) == 0:
+        raise SystemExit(
+            "No validation samples remained after filtering. "
+            "Increase COLAB_MAX_EVAL_SAMPLES or relax --max-train-duration-seconds."
+        )
 
     if args.max_train_samples:
         train_split = train_split.select(range(min(args.max_train_samples, len(train_split))))
@@ -486,7 +498,7 @@ def main() -> None:
         max_grad_norm=1.0,
         weight_decay=args.weight_decay,
         num_train_epochs=select_num_epochs(args.stage, args.num_train_epochs),
-        evaluation_strategy=evaluation_strategy,
+        eval_strategy=evaluation_strategy,
         predict_with_generate=bool(args.stage == "supervised"),
         generation_max_length=args.max_label_length,
         generation_num_beams=runtime.generation_num_beams,
@@ -526,7 +538,7 @@ def main() -> None:
         train_dataset=processed_train,
         eval_dataset=processed_validation,
         data_collator=data_collator,
-        tokenizer=processor.feature_extractor,
+        processing_class=processor,
         compute_metrics=build_compute_metrics(processor) if processed_validation is not None and use_trainer_eval else None,
         callbacks=[callback],
     )

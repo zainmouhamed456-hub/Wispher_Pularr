@@ -4,7 +4,6 @@ import json
 import math
 import os
 from io import BytesIO
-from itertools import islice
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -50,6 +49,7 @@ def load_asr_split(
     cache_dir: str | None = None,
     streaming: bool = False,
     materialize_limit: int | None = None,
+    max_duration_seconds: float | None = None,
 ) -> Dataset:
     _require_datasets()
     dataset = load_dataset(
@@ -60,10 +60,26 @@ def load_asr_split(
         **_load_dataset_kwargs(dataset_name, cache_dir=cache_dir),
     )
     if streaming:
-        stream = dataset if materialize_limit is None else islice(dataset, max(int(materialize_limit), 0))
-        rows = [dict(row) for row in stream]
-        materialized = Dataset.from_list(rows)
-        return materialized.cast_column("audio", Audio(sampling_rate=DEFAULT_AUDIO_SAMPLING_RATE))
+        rows: list[dict[str, Any]] = []
+        target_count = None if materialize_limit is None else max(int(materialize_limit), 0)
+        for row in dataset:
+            row_dict = dict(row)
+            if max_duration_seconds is not None:
+                duration_seconds = audio_duration_seconds(row_dict)
+                if not math.isfinite(duration_seconds) or float(duration_seconds) > float(max_duration_seconds):
+                    continue
+                row_dict["duration_seconds"] = float(duration_seconds)
+            rows.append(row_dict)
+            if target_count is not None and len(rows) >= target_count:
+                break
+        if rows:
+            materialized = Dataset.from_list(rows)
+        else:
+            empty_columns = {name: [] for name in getattr(dataset, "features", {}).keys()}
+            materialized = Dataset.from_dict(empty_columns)
+        if "audio" in materialized.column_names:
+            return materialized.cast_column("audio", Audio(sampling_rate=DEFAULT_AUDIO_SAMPLING_RATE))
+        return materialized
     return dataset.cast_column("audio", Audio(sampling_rate=DEFAULT_AUDIO_SAMPLING_RATE))
 
 
