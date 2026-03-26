@@ -198,12 +198,14 @@ def preprocess_split(
     processor: Any,
     max_label_length: int,
     max_samples: int | None = None,
+    batch_size: int = 32,
+    num_proc: int | None = None,
 ) -> Dataset:
     if max_samples:
         split = split.select(range(min(max_samples, len(split))))
     remove_columns = split.column_names
-    num_proc = suggest_num_proc(len(split))
-    batch_size = 32
+    if num_proc is None:
+        num_proc = suggest_num_proc(len(split))
     return split.map(
         lambda batch: _prepare_training_batch(batch, processor=processor, max_label_length=max_label_length),
         remove_columns=remove_columns,
@@ -354,6 +356,8 @@ def main() -> None:
     use_cuda = torch.cuda.is_available()
     runtime = runtime_for_stage(args.stage, runtime, use_cuda)
     use_streaming = bool(args.streaming or (args.stage == "supervised" and getattr(runtime, "profile", None) == "colab_t4"))
+    preprocess_batch_size = 4 if getattr(runtime, "profile", None) == "colab_t4" else 32
+    preprocess_num_proc = None if getattr(runtime, "profile", None) != "colab_t4" else 1
 
     cache_dir = args.cache_dir or runtime.cache_root
     dataset = (
@@ -399,8 +403,20 @@ def main() -> None:
         pseudo_split = filter_by_max_duration(pseudo_split, args.max_train_duration_seconds)
         train_split = concatenate_datasets([duplicate_dataset(labeled_train, labeled_repeat_count), pseudo_split]).shuffle(seed=args.seed)
         reference_train_size = len(labeled_train)
-        processed_labeled = preprocess_split(labeled_train, processor, args.max_label_length)
-        processed_pseudo = preprocess_split(pseudo_split, processor, args.max_label_length)
+        processed_labeled = preprocess_split(
+            labeled_train,
+            processor,
+            args.max_label_length,
+            batch_size=preprocess_batch_size,
+            num_proc=preprocess_num_proc,
+        )
+        processed_pseudo = preprocess_split(
+            pseudo_split,
+            processor,
+            args.max_label_length,
+            batch_size=preprocess_batch_size,
+            num_proc=preprocess_num_proc,
+        )
         processed_train = concatenate_datasets(
             [duplicate_dataset(processed_labeled, labeled_repeat_count), processed_pseudo]
         ).shuffle(seed=args.seed)
@@ -425,7 +441,13 @@ def main() -> None:
         )
         if auxiliary_train is not None:
             train_split = concatenate_datasets([train_split, auxiliary_train]).shuffle(seed=args.seed)
-        processed_train = preprocess_split(train_split, processor, args.max_label_length)
+        processed_train = preprocess_split(
+            train_split,
+            processor,
+            args.max_label_length,
+            batch_size=preprocess_batch_size,
+            num_proc=preprocess_num_proc,
+        )
         validation_for_trainer = filter_by_max_duration(dataset["validation"], args.max_train_duration_seconds)
     validation_for_full_eval = dataset["validation"]
 
@@ -438,7 +460,13 @@ def main() -> None:
         validation_for_full_eval = validation_for_full_eval.select(range(min(args.max_eval_samples, len(validation_for_full_eval))))
 
     processed_validation = (
-        preprocess_split(validation_for_trainer, processor, args.max_label_length)
+        preprocess_split(
+            validation_for_trainer,
+            processor,
+            args.max_label_length,
+            batch_size=preprocess_batch_size,
+            num_proc=preprocess_num_proc,
+        )
         if validation_for_trainer is not None
         else None
     )

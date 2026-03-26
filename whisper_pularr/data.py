@@ -118,6 +118,8 @@ def with_duration(example: dict[str, Any]) -> dict[str, Any]:
 def suggest_num_proc(dataset_length: int, max_workers: int = 24) -> int | None:
     if os.name == "nt":
         return None
+    if Path("/content").exists() or os.environ.get("COLAB_RELEASE_TAG") or os.environ.get("COLAB_GPU"):
+        return None
     cpu_total = os.cpu_count() or 1
     suggested = min(max(cpu_total - 1, 1), max_workers, max(int(dataset_length), 1))
     return suggested if suggested > 1 else None
