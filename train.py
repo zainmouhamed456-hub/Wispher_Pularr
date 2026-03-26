@@ -58,7 +58,11 @@ from whisper_pularr.settings import (
     SUPERVISED_PRESETS,
 )
 from whisper_pularr.text import normalize_transcript
-from whisper_pularr.training_policy import resolve_label_smoothing_factor, runtime_for_stage
+from whisper_pularr.training_policy import (
+    applied_label_smoothing_factor,
+    resolve_label_smoothing_factor,
+    runtime_for_stage,
+)
 from whisper_pularr.whisper_prompt import resolve_whisper_language
 
 
@@ -93,12 +97,49 @@ class WhisperDataCollatorSpeechSeq2SeqWithPadding:
         label_features = [{"input_ids": feature["labels"]} for feature in features]
         labels_batch = self.processor.tokenizer.pad(label_features, return_tensors="pt")
         labels = labels_batch["input_ids"].masked_fill(labels_batch.attention_mask.ne(1), -100)
-        if labels.shape[1] > 0 and (labels[:, 0] == self.processor.tokenizer.bos_token_id).all().cpu().item():
+        if labels.shape[1] > 1 and (labels[:, 0] == self.processor.tokenizer.bos_token_id).all().cpu().item():
             labels = labels[:, 1:]
         batch["labels"] = labels
+        decoder_input_ids = None
         if self.model is not None and hasattr(self.model, "prepare_decoder_input_ids_from_labels"):
-            batch["decoder_input_ids"] = self.model.prepare_decoder_input_ids_from_labels(labels=labels)
+            try:
+                decoder_input_ids = self.model.prepare_decoder_input_ids_from_labels(labels=labels)
+            except Exception:
+                decoder_input_ids = None
+        if decoder_input_ids is None or int(getattr(decoder_input_ids, "shape", [0, 0])[1]) == 0:
+            decoder_input_ids = _build_decoder_input_ids_from_labels(
+                labels,
+                model=self.model,
+                tokenizer=self.processor.tokenizer,
+            )
+        batch["decoder_input_ids"] = decoder_input_ids
         return batch
+
+
+def _build_decoder_input_ids_from_labels(labels: torch.Tensor, *, model: Any | None, tokenizer: Any) -> torch.Tensor:
+    pad_token_id = getattr(tokenizer, "pad_token_id", None)
+    if pad_token_id is None and model is not None and hasattr(model, "config"):
+        pad_token_id = getattr(model.config, "pad_token_id", None)
+    if pad_token_id is None:
+        pad_token_id = 0
+
+    decoder_start_token_id = None
+    if model is not None and hasattr(model, "config"):
+        decoder_start_token_id = getattr(model.config, "decoder_start_token_id", None)
+    if decoder_start_token_id is None:
+        decoder_start_token_id = getattr(tokenizer, "bos_token_id", None)
+    if decoder_start_token_id is None:
+        decoder_start_token_id = pad_token_id
+
+    safe_labels = labels.clone()
+    safe_labels = safe_labels.masked_fill(safe_labels.eq(-100), int(pad_token_id))
+    if safe_labels.shape[1] == 0:
+        return safe_labels.new_full((safe_labels.shape[0], 1), int(decoder_start_token_id))
+
+    decoder_input_ids = safe_labels.new_full(safe_labels.shape, int(pad_token_id))
+    decoder_input_ids[:, 1:] = safe_labels[:, :-1]
+    decoder_input_ids[:, 0] = int(decoder_start_token_id)
+    return decoder_input_ids
 
 
 def parse_args() -> argparse.Namespace:
@@ -184,6 +225,15 @@ def normalize_supervised_split_schema(split: Dataset) -> Dataset:
         batched=True,
         with_indices=True,
         desc="Synthesizing supervised ids",
+    )
+
+
+def filter_empty_transcriptions(split: Dataset) -> Dataset:
+    if "transcription" not in split.column_names or len(split) == 0:
+        return split
+    return split.filter(
+        lambda row: bool(normalize_transcript(str(row.get("transcription") or ""))),
+        desc="Filtering empty transcripts",
     )
 
 
@@ -341,6 +391,7 @@ def load_auxiliary_train_split(
         )
         auxiliary_train = filter_by_max_duration(auxiliary_train, max_train_duration_seconds)
         auxiliary_train = normalize_supervised_split_schema(auxiliary_train)
+        auxiliary_train = filter_empty_transcriptions(auxiliary_train)
         auxiliary_train = duplicate_dataset(auxiliary_train, max(int(aux_labeled_repeat_count), 1))
         if len(auxiliary_train) > per_dataset_cap:
             auxiliary_train = auxiliary_train.shuffle(seed=seed).select(range(per_dataset_cap))
@@ -417,16 +468,21 @@ def main() -> None:
     model.generation_config.num_beams = runtime.generation_num_beams
     labeled_repeat_count = resolve_labeled_repeat_count(args.stage, args.labeled_repeat_count)
     early_stop_patience_epochs = resolve_early_stop_patience(args.stage, args.early_stop_patience_epochs)
-    label_smoothing_factor = resolve_label_smoothing_factor(args.preset)
+    requested_label_smoothing_factor = resolve_label_smoothing_factor(args.preset)
+    label_smoothing_factor = applied_label_smoothing_factor(
+        stage=args.stage,
+        runtime_profile=getattr(runtime, "profile", None),
+        requested=requested_label_smoothing_factor,
+    )
 
     model.config.use_cache = False
     if hasattr(model.config, "apply_spec_augment"):
         model.config.apply_spec_augment = bool(SUPERVISED_PRESETS[args.preset]["apply_spec_augment"])
 
     if args.stage == "self_train":
-        labeled_train = filter_by_max_duration(dataset["train"], args.max_train_duration_seconds)
+        labeled_train = filter_empty_transcriptions(filter_by_max_duration(dataset["train"], args.max_train_duration_seconds))
         pseudo_split = attach_pseudo_labels(dataset["unlabeled"], args.pseudo_labels_path or "")
-        pseudo_split = filter_by_max_duration(pseudo_split, args.max_train_duration_seconds)
+        pseudo_split = filter_empty_transcriptions(filter_by_max_duration(pseudo_split, args.max_train_duration_seconds))
         train_split = concatenate_datasets([duplicate_dataset(labeled_train, labeled_repeat_count), pseudo_split]).shuffle(seed=args.seed)
         reference_train_size = len(labeled_train)
         processed_labeled = preprocess_split(
@@ -455,10 +511,11 @@ def main() -> None:
             labeled_repeat_count=labeled_repeat_count,
         )
         train_split = normalize_supervised_split_schema(train_split)
+        train_split = filter_empty_transcriptions(train_split)
         if len(train_split) == 0:
             raise SystemExit(
                 "No supervised training samples remained after filtering. "
-                "Increase COLAB_MAX_TRAIN_SAMPLES or relax --max-train-duration-seconds."
+                "Increase COLAB_MAX_TRAIN_SAMPLES, relax --max-train-duration-seconds, or ensure transcripts are non-empty."
             )
         reference_train_size = len(train_split)
         auxiliary_train = load_auxiliary_train_split(
@@ -479,12 +536,14 @@ def main() -> None:
             batch_size=preprocess_batch_size,
             num_proc=preprocess_num_proc,
         )
-        validation_for_trainer = filter_by_max_duration(dataset["validation"], args.max_train_duration_seconds)
-    validation_for_full_eval = dataset["validation"]
+        validation_for_trainer = filter_empty_transcriptions(
+            filter_by_max_duration(dataset["validation"], args.max_train_duration_seconds)
+        )
+    validation_for_full_eval = filter_empty_transcriptions(dataset["validation"])
     if len(validation_for_full_eval) == 0:
         raise SystemExit(
             "No validation samples remained after filtering. "
-            "Increase COLAB_MAX_EVAL_SAMPLES or relax --max-train-duration-seconds."
+            "Increase COLAB_MAX_EVAL_SAMPLES, relax --max-train-duration-seconds, or ensure transcripts are non-empty."
         )
 
     if args.max_train_samples:
@@ -585,7 +644,7 @@ def main() -> None:
         "requested_whisper_language": args.whisper_language,
         "language": language,
         "forced_decoder_ids": None,
-        "requested_label_smoothing_factor": label_smoothing_factor,
+        "requested_label_smoothing_factor": requested_label_smoothing_factor,
         "applied_label_smoothing_factor": label_smoothing_factor,
         "requested_learning_rate": resolve_learning_rate(args.preset, args.learning_rate),
         "train_samples": len(train_split),

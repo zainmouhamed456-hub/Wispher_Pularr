@@ -44,3 +44,9 @@ def runtime_for_stage(stage: str, runtime: Any, use_cuda: bool) -> Any:
 
 def resolve_label_smoothing_factor(preset: str) -> float:
     return float(SUPERVISED_PRESETS[preset]["label_smoothing_factor"])
+
+
+def applied_label_smoothing_factor(*, stage: str, runtime_profile: str | None, requested: float) -> float:
+    if stage == "supervised" and runtime_profile == "colab_t4":
+        return 0.0
+    return float(requested)

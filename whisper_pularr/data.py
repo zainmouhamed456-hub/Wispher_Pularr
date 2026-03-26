@@ -64,6 +64,9 @@ def load_asr_split(
         target_count = None if materialize_limit is None else max(int(materialize_limit), 0)
         for row in dataset:
             row_dict = dict(row)
+            transcript_value = _resolve_streaming_transcript_value(row_dict)
+            if transcript_value is not None and not normalize_transcript(transcript_value):
+                continue
             if max_duration_seconds is not None:
                 duration_seconds = audio_duration_seconds(row_dict)
                 if not math.isfinite(duration_seconds) or float(duration_seconds) > float(max_duration_seconds):
@@ -81,6 +84,13 @@ def load_asr_split(
             return materialized.cast_column("audio", Audio(sampling_rate=DEFAULT_AUDIO_SAMPLING_RATE))
         return materialized
     return dataset.cast_column("audio", Audio(sampling_rate=DEFAULT_AUDIO_SAMPLING_RATE))
+
+
+def _resolve_streaming_transcript_value(row: dict[str, Any]) -> str | None:
+    for key in ("transcription", "text", "sentence", "transcript"):
+        if key in row:
+            return str(row.get(key) or "")
+    return None
 
 
 def load_waxal_asr_dataset(

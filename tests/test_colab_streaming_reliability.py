@@ -37,6 +37,10 @@ class _FakeMaterializedDataset:
     def select(self, indices) -> "_FakeMaterializedDataset":
         return _FakeMaterializedDataset([self.rows[index] for index in list(indices)], column_names=self._column_names)
 
+    def filter(self, predicate, desc: str | None = None) -> "_FakeMaterializedDataset":
+        del desc
+        return _FakeMaterializedDataset([row for row in self.rows if predicate(row)], column_names=self._column_names)
+
     def __getitem__(self, key):
         if isinstance(key, str):
             return [row.get(key) for row in self.rows]
@@ -132,6 +136,7 @@ class ColabStreamingReliabilityTests(unittest.TestCase):
         rows = [
             {"id": "too-long-1", "audio": {"array": [0] * 31, "sampling_rate": 1}, "transcription": "a"},
             {"id": "too-long-2", "audio": {"array": [0] * 45, "sampling_rate": 1}, "transcription": "b"},
+            {"id": "empty-text", "audio": {"array": [0] * 6, "sampling_rate": 1}, "transcription": "   "},
             {"id": "valid-1", "audio": {"array": [0] * 5, "sampling_rate": 1}, "transcription": "c"},
             {"id": "valid-2", "audio": {"array": [0] * 7, "sampling_rate": 1}, "transcription": "d"},
             {"id": "valid-3", "audio": {"array": [0] * 9, "sampling_rate": 1}, "transcription": "e"},

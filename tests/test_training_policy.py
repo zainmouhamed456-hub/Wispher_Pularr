@@ -3,7 +3,11 @@ from __future__ import annotations
 import unittest
 
 from whisper_pularr.runtime import RuntimeConfig
-from whisper_pularr.training_policy import resolve_label_smoothing_factor, runtime_for_stage
+from whisper_pularr.training_policy import (
+    applied_label_smoothing_factor,
+    resolve_label_smoothing_factor,
+    runtime_for_stage,
+)
 
 
 class TrainingPolicyTests(unittest.TestCase):
@@ -64,6 +68,16 @@ class TrainingPolicyTests(unittest.TestCase):
     def test_label_smoothing_comes_from_preset(self) -> None:
         self.assertEqual(resolve_label_smoothing_factor("trial_a"), 0.1)
         self.assertEqual(resolve_label_smoothing_factor("trial_c"), 0.0)
+
+    def test_colab_supervised_disables_label_smoothing(self) -> None:
+        self.assertEqual(
+            applied_label_smoothing_factor(stage="supervised", runtime_profile="colab_t4", requested=0.1),
+            0.0,
+        )
+        self.assertEqual(
+            applied_label_smoothing_factor(stage="supervised", runtime_profile="low_vram", requested=0.1),
+            0.1,
+        )
 
 
 if __name__ == "__main__":
