@@ -13,6 +13,8 @@ It includes:
 - `run_self_train_sequence.py`: runs self-training sequentially across generated pseudo-label manifest snapshots
 - `dashboard.py`: lightweight web dashboard for pseudo-labeling, supervised trials, self-train snapshot progress, and WER/CER trends
 - `colab/run_t4_free.sh`: Colab free-tier launcher tuned for a single `T4 16GB`
+- `colab/bootstrap_t4_free.sh`: installs the Colab Python dependencies
+- `colab/Whisper_Pularr_T4_Free.ipynb`: ready-to-run Colab notebook
 
 ## Recommended flow
 
@@ -37,6 +39,7 @@ python compare_checkpoints.py --checkpoint openai/whisper-small --checkpoint dow
 python pseudo_label.py --output-path artifacts/pseudo_labels.jsonl
 python run_self_train_sequence.py --dataset-name google/WaxalNLP --dataset-config ful_asr --model-id openai/whisper-small --manifests-dir artifacts/pseudo_labels_manifests --output-root runs/self_train_snapshots
 bash remote/run_goal_h100_fast.sh /root/whisper-pularr google/WaxalNLP ful_asr openai/whisper-small openai/whisper-large-v3
+bash colab/bootstrap_t4_free.sh
 bash colab/run_t4_free.sh /content/whisper-pularr google/WaxalNLP ful_asr openai/whisper-small openai/whisper-large-v3
 python dashboard.py --root . --host 127.0.0.1 --port 8787
 ```
@@ -54,6 +57,7 @@ python dashboard.py --root . --host 127.0.0.1 --port 8787
 - `train.py` accepts comma-separated auxiliary datasets via `--aux-dataset-name` and `--aux-dataset-config`, which makes it easier to mix Waxal with external Pulaar/Fulfulde supervision.
 - For a short single-GPU session on an `H100 80GB`, prefer `bash remote/run_goal_h100_fast.sh ...`; it runs one corrected supervised pass, generates teacher pseudo-labels with beam search, self-trains on the final manifest only, and writes quick comparison reports.
 - For Google Colab free-tier on a `T4 16GB`, use `bash colab/run_t4_free.sh ...`. Reportless runs now auto-detect the local GPU instead of assuming BF16 hardware, keep batch sizes small enough for T4, and default to a supervised-first flow. Set `COLAB_RUN_SELF_TRAIN=1` only if the session still has enough time for pseudo-labeling and stage 2.
+- If you want a notebook instead of manual shell cells, open `colab/Whisper_Pularr_T4_Free.ipynb` in Colab and run it top to bottom.
 - Colab caches default to `/content/hf-cache` for speed, while outputs automatically go to `/content/drive/MyDrive/whisper-pularr-runs` when Drive is mounted, otherwise `/content/whisper-pularr-runs`.
 - Bad audio rows in auxiliary datasets are now excluded during duration filtering instead of crashing the whole run, which is especially important for `ngia/ASR_pulaar`.
 - The dashboard reads local artifacts only. On a remote machine, start it with `bash remote/run_dashboard.sh /root/whisper-pularr 0.0.0.0 8787` and tunnel with `ssh -L 8787:127.0.0.1:8787 user@host`.
