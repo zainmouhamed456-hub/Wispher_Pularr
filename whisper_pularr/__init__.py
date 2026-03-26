@@ -1,0 +1,17 @@
+"""Utilities for training Whisper Small on WaxalNLP Pularr/Pulaar ASR."""
+
+from .settings import (
+    DEFAULT_DATASET_CONFIG,
+    DEFAULT_DATASET_NAME,
+    DEFAULT_TEACHER_MODEL,
+    DEFAULT_TRAINABLE_MODEL,
+    SUPERVISED_PRESETS,
+)
+
+__all__ = [
+    "DEFAULT_DATASET_CONFIG",
+    "DEFAULT_DATASET_NAME",
+    "DEFAULT_TEACHER_MODEL",
+    "DEFAULT_TRAINABLE_MODEL",
+    "SUPERVISED_PRESETS",
+]

@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.venv/
+artifacts/
+runs/
+reports/
+downloads/
+*.tar.gz
+*.zip
+*.safetensors
+*.log
+run_summary.json
+best_full_eval_summary.json
