@@ -80,6 +80,7 @@ class SplitOnlyEvalLoadingTests(unittest.TestCase):
             dataset_name="google/WaxalNLP",
             dataset_config="ful_asr",
             split="validation",
+            max_samples=None,
             fixed_slice_size=1,
             whisper_language=None,
             hardware_report=None,
@@ -174,6 +175,7 @@ class SplitOnlyEvalLoadingTests(unittest.TestCase):
             dataset_name="google/WaxalNLP",
             dataset_config="ful_asr",
             split="validation",
+            max_samples=None,
             fixed_slice_size=1,
             whisper_language=None,
             hardware_report=None,
@@ -211,6 +213,57 @@ class SplitOnlyEvalLoadingTests(unittest.TestCase):
         self.assertEqual(observed_kwargs["generation_num_beams"], 5)
         self.assertEqual(observed_kwargs["evaluation_batch_size"], 4)
         self.assertEqual(observed_kwargs["chunk_length_s"], 22)
+
+    def test_compare_main_applies_max_samples_before_fixed_slice(self) -> None:
+        dataset = _FakeDataset(
+            [
+                {"id": "1", "audio": {"array": [0.0], "sampling_rate": 16000}, "transcription": "ok"},
+                {"id": "2", "audio": {"array": [0.0], "sampling_rate": 16000}, "transcription": "ok"},
+                {"id": "3", "audio": {"array": [0.0], "sampling_rate": 16000}, "transcription": "ok"},
+            ]
+        )
+        args = Namespace(
+            checkpoints=["checkpoint-a"],
+            dataset_name="google/WaxalNLP",
+            dataset_config="ful_asr",
+            split="validation",
+            max_samples=2,
+            fixed_slice_size=2,
+            whisper_language=None,
+            hardware_report=None,
+            cache_dir=None,
+            output_dir="unused",
+            skip_full=True,
+            generation_num_beams=None,
+            evaluation_batch_size=None,
+            chunk_length_s=None,
+        )
+        observed_kwargs: dict[str, object] = {}
+
+        def _fake_evaluate_checkpoint(checkpoint, **kwargs):
+            observed_kwargs["checkpoint"] = checkpoint
+            observed_kwargs.update(kwargs)
+            return {"checkpoint": checkpoint, "fixed_slice_metrics": {}, "full_metrics": None}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            args.output_dir = str(output_dir)
+            with (
+                mock.patch.object(compare_checkpoints, "_require_compare_runtime", return_value=None),
+                mock.patch.object(compare_checkpoints, "parse_args", return_value=args),
+                mock.patch.object(
+                    compare_checkpoints,
+                    "runtime_from_optional_report",
+                    return_value=SimpleNamespace(cache_root=str(output_dir)),
+                ),
+                mock.patch.object(compare_checkpoints, "load_asr_split", return_value=dataset),
+                mock.patch.object(compare_checkpoints, "_evaluate_checkpoint", side_effect=_fake_evaluate_checkpoint),
+                mock.patch.object(compare_checkpoints, "save_json", return_value=None),
+            ):
+                compare_checkpoints.main()
+
+        self.assertEqual(len(observed_kwargs["dataset"]), 2)
+        self.assertEqual(len(observed_kwargs["fixed_slice"]), 2)
 
 
 if __name__ == "__main__":

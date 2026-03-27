@@ -39,6 +39,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dataset-name", default=DEFAULT_DATASET_NAME)
     parser.add_argument("--dataset-config", default=DEFAULT_DATASET_CONFIG)
     parser.add_argument("--split", choices=["validation", "test", "train"], default="validation")
+    parser.add_argument("--max-samples", type=int, default=None)
     parser.add_argument("--fixed-slice-size", type=int, default=32)
     parser.add_argument("--whisper-language", default=DEFAULT_WHISPER_LANGUAGE_HINT)
     parser.add_argument("--hardware-report", default=None)
@@ -141,6 +142,8 @@ def main() -> None:
         split=args.split,
         cache_dir=cache_dir,
     )
+    if args.max_samples:
+        dataset = dataset.select(range(min(int(args.max_samples), len(dataset))))
     fixed_slice = dataset.select(range(min(len(dataset), max(int(args.fixed_slice_size), 1))))
 
     summaries = [
@@ -164,6 +167,7 @@ def main() -> None:
             "dataset_name": args.dataset_name,
             "dataset_config": args.dataset_config,
             "split": args.split,
+            "max_samples": None if args.max_samples is None else int(args.max_samples),
             "fixed_slice_size": len(fixed_slice),
             "skip_full": bool(args.skip_full),
             "generation_num_beams": int(args.generation_num_beams or getattr(runtime, "generation_num_beams", 1) or 1),

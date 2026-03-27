@@ -28,6 +28,7 @@ DEFAULT_COLAB_PSEUDO_BATCH_SIZE = "2"
 DEFAULT_COLAB_MAX_KEEP_MULTIPLE = "0.75"
 DEFAULT_COLAB_MANIFEST_EVERY = "4000"
 DEFAULT_COLAB_ANALYSIS_TOP_K = "100"
+DEFAULT_COLAB_FULL_VALIDATION_MAX_SAMPLES = "256"
 
 
 def _configure_runtime_env() -> None:
@@ -203,6 +204,7 @@ def _compare_checkpoints(
     fixed_slice_size: int,
     generation_num_beams: int,
     skip_full: bool,
+    max_samples: int | None = None,
 ) -> Path:
     command = [
         sys.executable,
@@ -224,6 +226,8 @@ def _compare_checkpoints(
             str(output_dir),
         ]
     )
+    if max_samples is not None:
+        command.extend(["--max-samples", str(max(int(max_samples), 1))])
     _append_if_present(command, "--whisper-language", whisper_language)
     if skip_full:
         command.append("--skip-full")
@@ -299,6 +303,10 @@ def _run_beam_sweep(
     promotion_summary_path: Path,
 ) -> int:
     beam_sweep_root = reports_root / "colab_beam_sweep"
+    full_validation_max_samples = max(
+        int(os.environ.get("COLAB_FULL_VALIDATION_MAX_SAMPLES") or DEFAULT_COLAB_FULL_VALIDATION_MAX_SAMPLES),
+        1,
+    )
     beam_results: list[dict[str, Any]] = []
     _log(
         "Starting Session 1 beam sweep on the fixed validation slice. "
@@ -316,6 +324,7 @@ def _run_beam_sweep(
             fixed_slice_size=fixed_slice_size,
             generation_num_beams=beam,
             skip_full=True,
+            max_samples=fixed_slice_size,
         )
         checkpoint_summary = _checkpoint_summary(summary_path, reference_checkpoint)
         beam_results.append(
@@ -328,7 +337,10 @@ def _run_beam_sweep(
 
     beam_results.sort(key=lambda entry: metrics_sort_key(entry["reference_checkpoint_metrics"]) + (entry["beam"],))
     selected_beam = int(beam_results[0]["beam"])
-    _log(f"Beam {selected_beam} won the fixed-slice sweep. Running full validation comparison...")
+    _log(
+        f"Beam {selected_beam} won the fixed-slice sweep. "
+        f"Running capped full validation comparison on up to {full_validation_max_samples} sample(s)..."
+    )
     comparison_summary_path = _compare_checkpoints(
         root=root,
         checkpoints=checkpoints,
@@ -339,6 +351,7 @@ def _run_beam_sweep(
         fixed_slice_size=fixed_slice_size,
         generation_num_beams=selected_beam,
         skip_full=False,
+        max_samples=full_validation_max_samples,
     )
     reference_summary = _checkpoint_summary(comparison_summary_path, reference_checkpoint)
     _save_json(
