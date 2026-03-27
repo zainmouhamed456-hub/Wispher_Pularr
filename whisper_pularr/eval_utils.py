@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -18,9 +19,11 @@ except ImportError:
 try:
     from transformers import TrainerCallback, pipeline
     from transformers.modeling_utils import unwrap_model
+    from transformers.utils import logging as hf_logging
 except ImportError:
     TrainerCallback = object
     pipeline = None
+    hf_logging = None
 
     def unwrap_model(model: Any) -> Any:
         return model
@@ -149,33 +152,73 @@ def evaluate_long_form_dataset(
     per_sample: list[dict[str, Any]] = []
     batch_size = effective_batch_size
     rows = list(dataset)
-    for start in range(0, len(rows), batch_size):
-        batch_rows = rows[start : start + batch_size]
-        batch_inputs = [
-            {"raw": row["audio"]["array"], "sampling_rate": row["audio"]["sampling_rate"]}
-            for row in batch_rows
-        ]
-        batch_results = asr_pipeline(
-            batch_inputs,
-            generate_kwargs=generate_kwargs if generate_kwargs else None,
-            return_timestamps=False,
-        )
-        if isinstance(batch_results, dict):
-            batch_results = [batch_results]
-        for row, result in zip(batch_rows, batch_results):
-            prediction = (result.get("text") or "").strip()
-            reference = (row.get("transcription") or "").strip()
-            references.append(reference)
-            predictions.append(prediction)
-            per_sample.append(
-                {
-                    "id": row.get("id"),
-                    "reference": reference,
-                    "prediction": prediction,
-                    "normalized_reference": normalize_transcript(reference),
-                    "normalized_prediction": normalize_transcript(prediction),
-                }
-            )
+    total_rows = len(rows)
+    print(
+        f"Evaluating {total_rows} sample(s) with batch_size={batch_size}, "
+        f"num_beams={num_beams}, chunk_length_s={int(chunk_length_s)}...",
+        flush=True,
+    )
+    previous_verbosity = None
+    if hf_logging is not None:
+        try:
+            previous_verbosity = hf_logging.get_verbosity()
+            hf_logging.set_verbosity_error()
+        except Exception:
+            previous_verbosity = None
+    try:
+        for start in range(0, total_rows, batch_size):
+            batch_rows = rows[start : start + batch_size]
+            batch_inputs = [
+                {"raw": row["audio"]["array"], "sampling_rate": row["audio"]["sampling_rate"]}
+                for row in batch_rows
+            ]
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    message=r".*The input name `inputs` is deprecated.*",
+                    category=FutureWarning,
+                )
+                warnings.filterwarnings(
+                    "ignore",
+                    message=r".*Passing a tuple of `past_key_values` is deprecated.*",
+                    category=FutureWarning,
+                )
+                warnings.filterwarnings(
+                    "ignore",
+                    message=r".*attention mask is not set.*",
+                )
+                warnings.filterwarnings(
+                    "ignore",
+                    message=r".*using the pipelines sequentially on GPU.*",
+                )
+                batch_results = asr_pipeline(
+                    batch_inputs,
+                    generate_kwargs=generate_kwargs if generate_kwargs else None,
+                    return_timestamps=False,
+                )
+            if isinstance(batch_results, dict):
+                batch_results = [batch_results]
+            for row, result in zip(batch_rows, batch_results):
+                prediction = (result.get("text") or "").strip()
+                reference = (row.get("transcription") or "").strip()
+                references.append(reference)
+                predictions.append(prediction)
+                per_sample.append(
+                    {
+                        "id": row.get("id"),
+                        "reference": reference,
+                        "prediction": prediction,
+                        "normalized_reference": normalize_transcript(reference),
+                        "normalized_prediction": normalize_transcript(prediction),
+                    }
+                )
+            print(f"Long-form eval progress: {len(per_sample)}/{total_rows} sample(s)", flush=True)
+    finally:
+        if hf_logging is not None and previous_verbosity is not None:
+            try:
+                hf_logging.set_verbosity(previous_verbosity)
+            except Exception:
+                pass
 
     metrics = compute_error_metrics(references, predictions)
     payload = {

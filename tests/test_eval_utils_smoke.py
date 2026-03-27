@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import unittest
 
 import whisper_pularr.eval_utils as eval_utils
@@ -31,6 +33,22 @@ class _DummyModel:
 class _DummyProcessor:
     tokenizer = object()
     feature_extractor = object()
+
+
+class _DummyHFLogging:
+    def __init__(self) -> None:
+        self.verbosity = 30
+        self.calls: list[tuple[str, int | None]] = []
+
+    def get_verbosity(self) -> int:
+        self.calls.append(("get_verbosity", None))
+        return self.verbosity
+
+    def set_verbosity_error(self) -> None:
+        self.calls.append(("set_verbosity_error", None))
+
+    def set_verbosity(self, value: int) -> None:
+        self.calls.append(("set_verbosity", value))
 
 
 class EvalUtilsSmokeTests(unittest.TestCase):
@@ -127,6 +145,54 @@ class EvalUtilsSmokeTests(unittest.TestCase):
         self.assertEqual(observed_pipeline_kwargs[0]["chunk_length_s"], 18)
         self.assertEqual(observed_pipeline_kwargs[0]["batch_size"], 1)
         self.assertEqual(observed_calls[0]["generate_kwargs"], {"num_beams": 4})
+
+    def test_evaluate_long_form_dataset_logs_progress_and_restores_transformers_verbosity(self) -> None:
+        original_pipeline = eval_utils.pipeline
+        original_torch = eval_utils.torch
+        original_unwrap_model = eval_utils.unwrap_model
+        original_hf_logging = eval_utils.hf_logging
+        fake_hf_logging = _DummyHFLogging()
+
+        def fake_pipeline(**kwargs):
+            def _runner(batch_inputs, generate_kwargs=None, return_timestamps=False):
+                return [{"text": "mi yidi jam"} for _ in batch_inputs]
+
+            return _runner
+
+        eval_utils.pipeline = fake_pipeline
+        eval_utils.torch = _DummyTorch()
+        eval_utils.unwrap_model = lambda model: model
+        eval_utils.hf_logging = fake_hf_logging
+        stdout = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(stdout):
+                payload = eval_utils.evaluate_long_form_dataset(
+                    model=_DummyModel(),
+                    processor=_DummyProcessor(),
+                    dataset=[
+                        {"id": "1", "audio": {"array": [0.0], "sampling_rate": 16000}, "transcription": "mi yidi jam"},
+                        {"id": "2", "audio": {"array": [0.0], "sampling_rate": 16000}, "transcription": "mi yidi jam"},
+                    ],
+                    runtime_config=_DummyRuntime(),
+                    output_path=None,
+                    language=None,
+                    evaluation_batch_size=1,
+                )
+        finally:
+            eval_utils.pipeline = original_pipeline
+            eval_utils.torch = original_torch
+            eval_utils.unwrap_model = original_unwrap_model
+            eval_utils.hf_logging = original_hf_logging
+
+        self.assertEqual(payload["sample_count"], 2)
+        output = stdout.getvalue()
+        self.assertIn("Evaluating 2 sample(s)", output)
+        self.assertIn("Long-form eval progress: 1/2 sample(s)", output)
+        self.assertIn("Long-form eval progress: 2/2 sample(s)", output)
+        self.assertEqual(
+            fake_hf_logging.calls,
+            [("get_verbosity", None), ("set_verbosity_error", None), ("set_verbosity", 30)],
+        )
 
 
 if __name__ == "__main__":
