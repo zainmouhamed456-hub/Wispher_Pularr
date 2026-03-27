@@ -647,7 +647,7 @@ def main() -> None:
         "streaming_collection": streaming_collection,
         "requested_whisper_language": args.whisper_language,
         "language": language,
-        "forced_decoder_ids": None,
+        "forced_decoder_ids": getattr(model.generation_config, "forced_decoder_ids", None),
         "requested_label_smoothing_factor": requested_label_smoothing_factor,
         "applied_label_smoothing_factor": label_smoothing_factor,
         "requested_learning_rate": resolve_learning_rate(args.preset, args.learning_rate),

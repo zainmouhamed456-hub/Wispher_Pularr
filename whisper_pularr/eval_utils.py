@@ -140,7 +140,7 @@ def evaluate_long_form_dataset(
         torch_dtype=_pipeline_dtype(runtime_config),
         device=device,
     )
-    generate_kwargs: dict[str, Any] = {}
+    generate_kwargs: dict[str, Any] = {"task": "transcribe"}
     num_beams = max(int(generation_num_beams or getattr(runtime_config, "generation_num_beams", 1) or 1), 1)
     if num_beams > 1:
         generate_kwargs["num_beams"] = num_beams
@@ -194,7 +194,7 @@ def evaluate_long_form_dataset(
                 batch_results = asr_pipeline(
                     batch_inputs,
                     generate_kwargs=generate_kwargs if generate_kwargs else None,
-                    return_timestamps=False,
+                    return_timestamps=True,
                 )
             if isinstance(batch_results, dict):
                 batch_results = [batch_results]

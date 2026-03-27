@@ -4,7 +4,9 @@ DEFAULT_DATASET_NAME = "google/WaxalNLP"
 DEFAULT_DATASET_CONFIG = "ful_asr"
 DEFAULT_TRAINABLE_MODEL = "openai/whisper-small"
 DEFAULT_TEACHER_MODEL = "openai/whisper-large-v3"
-DEFAULT_WHISPER_LANGUAGE_HINT = None
+# Whisper does not ship a Pulaar/Fulfulde language token, so keep decoding in a
+# stable Latin-script transcription mode unless the caller overrides it.
+DEFAULT_WHISPER_LANGUAGE_HINT = "en"
 DEFAULT_AUDIO_SAMPLING_RATE = 16_000
 DEFAULT_MAX_TRAIN_DURATION_SECONDS = 30.0
 DEFAULT_EVAL_CHUNK_LENGTH_SECONDS = 30

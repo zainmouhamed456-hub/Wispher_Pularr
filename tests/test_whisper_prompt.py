@@ -48,6 +48,11 @@ class WhisperPromptTests(unittest.TestCase):
         tokenizer = _DummyTokenizer()
         self.assertEqual(resolve_whisper_language(tokenizer, "en"), "<|en|>")
 
+    def test_resolve_whisper_language_allows_explicit_auto_opt_out(self) -> None:
+        tokenizer = _DummyTokenizer()
+        self.assertIsNone(resolve_whisper_language(tokenizer, "none"))
+        self.assertIsNone(resolve_whisper_language(tokenizer, "auto"))
+
     def test_omitted_language_clears_generation_language_and_forced_ids(self) -> None:
         processor = _DummyProcessor()
         model = _DummyModel()

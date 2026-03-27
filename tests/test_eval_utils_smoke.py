@@ -93,8 +93,8 @@ class EvalUtilsSmokeTests(unittest.TestCase):
 
         self.assertEqual(payload["sample_count"], 2)
         self.assertEqual(payload["metrics"]["normalized_wer"], 0.0)
-        self.assertEqual(observed_calls[0]["generate_kwargs"], {"num_beams": 3, "language": "fr"})
-        self.assertFalse(observed_calls[0]["return_timestamps"])
+        self.assertEqual(observed_calls[0]["generate_kwargs"], {"task": "transcribe", "num_beams": 3, "language": "fr"})
+        self.assertTrue(observed_calls[0]["return_timestamps"])
 
     def test_evaluate_long_form_dataset_allows_explicit_decode_overrides(self) -> None:
         original_pipeline = eval_utils.pipeline
@@ -144,7 +144,7 @@ class EvalUtilsSmokeTests(unittest.TestCase):
         self.assertEqual(payload["sample_count"], 2)
         self.assertEqual(observed_pipeline_kwargs[0]["chunk_length_s"], 18)
         self.assertEqual(observed_pipeline_kwargs[0]["batch_size"], 1)
-        self.assertEqual(observed_calls[0]["generate_kwargs"], {"num_beams": 4})
+        self.assertEqual(observed_calls[0]["generate_kwargs"], {"task": "transcribe", "num_beams": 4})
 
     def test_evaluate_long_form_dataset_logs_progress_and_restores_transformers_verbosity(self) -> None:
         original_pipeline = eval_utils.pipeline

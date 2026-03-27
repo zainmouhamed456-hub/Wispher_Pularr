@@ -47,7 +47,7 @@ python dashboard.py --root . --host 127.0.0.1 --port 8787
 ## Notes
 
 - The default dataset config is `ful_asr`, which is assumed to be the correct WaxalNLP subset for Pularr/Pulaar.
-- When `--whisper-language` is omitted, training/evaluation/pseudo-labeling now use Whisper's no-forced-language behavior instead of inheriting an English prompt.
+- Whisper does not provide a native Pulaar/Fulfulde language token. When `--whisper-language` is omitted, training/evaluation/pseudo-labeling now fall back to Whisper's English transcription prompt to keep decoding in a stable Latin-script mode; pass `--whisper-language none` to opt out.
 - Training excludes clips longer than 30 seconds; evaluation and pseudo-labeling use chunked long-form decoding.
 - Pseudo-labeling now writes rolling manifest snapshots every 1000 processed audios into a sibling `*_manifests/` directory, while still writing the final combined manifest to the requested `--output-path`.
 - Stage 2 self-training now runs sequentially over all manifest snapshots in order and writes runs under `runs/self_train_snapshots/`; snapshots that fail to beat the best-so-far no longer stop the whole sweep.
