@@ -30,6 +30,20 @@ DEFAULT_COLAB_MANIFEST_EVERY = "4000"
 DEFAULT_COLAB_ANALYSIS_TOP_K = "100"
 
 
+def _configure_runtime_env() -> None:
+    os.environ.setdefault("PYTHONUNBUFFERED", "1")
+    os.environ.setdefault("USE_TF", "0")
+    os.environ.setdefault("TRANSFORMERS_NO_TF", "1")
+    os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+    os.environ.setdefault("HF_HOME", "/content/hf-cache")
+    for stream in (getattr(sys, "stdout", None), getattr(sys, "stderr", None)):
+        if stream is not None and hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(line_buffering=True, write_through=True)
+            except Exception:
+                pass
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the Colab T4 Whisper Pularr pipeline with promotion-aware defaults.")
     parser.add_argument("root", nargs="?", default="/content/whisper-pularr")
@@ -54,7 +68,12 @@ def _read_json(path: Path) -> dict[str, Any]:
         return json.load(handle)
 
 
+def _log(message: str) -> None:
+    print(message, flush=True)
+
+
 def _run(command: list[str], *, cwd: Path) -> None:
+    _log(f"$ {' '.join(command)}")
     completed = subprocess.run(command, cwd=cwd, text=True, check=False)
     if completed.returncode != 0:
         raise SystemExit(completed.returncode)
@@ -281,7 +300,12 @@ def _run_beam_sweep(
 ) -> int:
     beam_sweep_root = reports_root / "colab_beam_sweep"
     beam_results: list[dict[str, Any]] = []
+    _log(
+        "Starting Session 1 beam sweep on the fixed validation slice. "
+        f"Beams: {', '.join(str(beam) for beam in compare_beams)}."
+    )
     for beam in compare_beams:
+        _log(f"Running fixed-slice comparison for beam {beam}...")
         summary_path = _compare_checkpoints(
             root=root,
             checkpoints=checkpoints,
@@ -304,6 +328,7 @@ def _run_beam_sweep(
 
     beam_results.sort(key=lambda entry: metrics_sort_key(entry["reference_checkpoint_metrics"]) + (entry["beam"],))
     selected_beam = int(beam_results[0]["beam"])
+    _log(f"Beam {selected_beam} won the fixed-slice sweep. Running full validation comparison...")
     comparison_summary_path = _compare_checkpoints(
         root=root,
         checkpoints=checkpoints,
@@ -378,6 +403,7 @@ def _run_supervised_session(
 ) -> tuple[Path, Path]:
     run_dir = _resume_output_dir(resume_from_checkpoint) if resume_from_checkpoint else _next_session_run_dir(supervised_root)
     run_dir.mkdir(parents=True, exist_ok=True)
+    _log(f"Starting supervised continuation in {run_dir}...")
     command = [
         sys.executable,
         _script_path(root, "train.py"),
@@ -521,6 +547,7 @@ def _run_stage_two(
     runs_root: Path,
 ) -> None:
     base_checkpoint, _ = _promotion_state(promotion_summary_path, model_id)
+    _log(f"Starting Stage 2 from base checkpoint: {base_checkpoint}")
     pseudo_labels_path = artifacts_root / "colab_pseudo_labels.jsonl"
     pseudo_command = [
         sys.executable,
@@ -620,6 +647,7 @@ def _run_stage_two(
 
 
 def main() -> None:
+    _configure_runtime_env()
     args = parse_args()
     root = Path(args.root).resolve()
     runs_root = Path(os.environ.get("RUNS_ROOT") or "/content/whisper-pularr-runs").resolve()
@@ -644,6 +672,11 @@ def main() -> None:
     aux_dataset_name = str(args.aux_dataset_name or "").strip() or None
     aux_dataset_config = str(args.aux_dataset_config or "").strip() or None
     checkpoints = _unique_checkpoints(args.model_id, settings.base_model)
+    _log(
+        "Launcher configuration: "
+        f"mode={'eval_only' if settings.eval_only else ('self_train' if os.environ.get('COLAB_RUN_SELF_TRAIN') == '1' else 'supervised')} "
+        f"runs_root={runs_root} compare_beams={settings.compare_beams}"
+    )
 
     selected_beam = _selected_beam_from_summary(decode_selection_path, settings.compare_beams[0])
     if settings.eval_only or not decode_selection_path.exists() or not promotion_summary_path.exists():
