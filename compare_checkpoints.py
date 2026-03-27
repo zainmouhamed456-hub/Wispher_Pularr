@@ -16,10 +16,15 @@ try:
 except ImportError:
     torch = None
 
-from whisper_pularr.data import load_waxal_asr_dataset, save_json
+from whisper_pularr.data import load_asr_split, save_json
 from whisper_pularr.eval_utils import evaluate_long_form_dataset
 from whisper_pularr.runtime import runtime_from_optional_report
-from whisper_pularr.settings import DEFAULT_DATASET_CONFIG, DEFAULT_DATASET_NAME, DEFAULT_WHISPER_LANGUAGE_HINT
+from whisper_pularr.settings import (
+    DEFAULT_DATASET_CONFIG,
+    DEFAULT_DATASET_NAME,
+    DEFAULT_EVAL_CHUNK_LENGTH_SECONDS,
+    DEFAULT_WHISPER_LANGUAGE_HINT,
+)
 from whisper_pularr.whisper_prompt import configure_whisper_prompt, resolve_whisper_language
 
 
@@ -40,6 +45,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cache-dir", default=None)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--skip-full", action="store_true")
+    parser.add_argument("--generation-num-beams", type=int, default=None)
+    parser.add_argument("--evaluation-batch-size", type=int, default=None)
+    parser.add_argument("--chunk-length-s", type=int, default=None)
     return parser.parse_args()
 
 
@@ -61,6 +69,9 @@ def _evaluate_checkpoint(
     output_dir: Path,
     whisper_language: str | None,
     skip_full: bool,
+    generation_num_beams: int | None,
+    evaluation_batch_size: int | None,
+    chunk_length_s: int,
 ) -> dict[str, Any]:
     processor = AutoProcessor.from_pretrained(checkpoint)
     model = AutoModelForSpeechSeq2Seq.from_pretrained(checkpoint)
@@ -76,6 +87,9 @@ def _evaluate_checkpoint(
         runtime_config=runtime,
         output_path=str(checkpoint_dir / "fixed_slice_eval.json"),
         language=language,
+        chunk_length_s=chunk_length_s,
+        evaluation_batch_size=evaluation_batch_size,
+        generation_num_beams=generation_num_beams,
     )
 
     full_payload = None
@@ -87,12 +101,18 @@ def _evaluate_checkpoint(
             runtime_config=runtime,
             output_path=str(checkpoint_dir / "full_eval.json"),
             language=language,
+            chunk_length_s=chunk_length_s,
+            evaluation_batch_size=evaluation_batch_size,
+            generation_num_beams=generation_num_beams,
         )
 
     summary = {
         "checkpoint": checkpoint,
         "resolved_language": language,
         "fixed_slice_size": fixed_payload["sample_count"],
+        "generation_num_beams": int(generation_num_beams or getattr(runtime, "generation_num_beams", 1) or 1),
+        "evaluation_batch_size": int(evaluation_batch_size or getattr(runtime, "evaluation_batch_size", 8) or 8),
+        "chunk_length_s": int(chunk_length_s),
         "fixed_slice_metrics": fixed_payload["metrics"],
         "full_metrics": full_payload["metrics"] if full_payload else None,
         "fixed_slice_output_path": str(checkpoint_dir / "fixed_slice_eval.json"),
@@ -115,7 +135,12 @@ def main() -> None:
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    dataset = load_waxal_asr_dataset(args.dataset_name, args.dataset_config, cache_dir=cache_dir)[args.split]
+    dataset = load_asr_split(
+        args.dataset_name,
+        args.dataset_config,
+        split=args.split,
+        cache_dir=cache_dir,
+    )
     fixed_slice = dataset.select(range(min(len(dataset), max(int(args.fixed_slice_size), 1))))
 
     summaries = [
@@ -127,6 +152,9 @@ def main() -> None:
             output_dir=output_dir,
             whisper_language=args.whisper_language,
             skip_full=bool(args.skip_full),
+            generation_num_beams=args.generation_num_beams,
+            evaluation_batch_size=args.evaluation_batch_size,
+            chunk_length_s=int(args.chunk_length_s or DEFAULT_EVAL_CHUNK_LENGTH_SECONDS),
         )
         for checkpoint in args.checkpoints
     ]
@@ -138,6 +166,9 @@ def main() -> None:
             "split": args.split,
             "fixed_slice_size": len(fixed_slice),
             "skip_full": bool(args.skip_full),
+            "generation_num_beams": int(args.generation_num_beams or getattr(runtime, "generation_num_beams", 1) or 1),
+            "evaluation_batch_size": int(args.evaluation_batch_size or getattr(runtime, "evaluation_batch_size", 8) or 8),
+            "chunk_length_s": int(args.chunk_length_s or DEFAULT_EVAL_CHUNK_LENGTH_SECONDS),
             "checkpoints": summaries,
         },
     )

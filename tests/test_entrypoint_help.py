@@ -33,6 +33,9 @@ class EntrypointHelpTests(unittest.TestCase):
     def test_compare_checkpoints_help(self) -> None:
         self._assert_help("compare_checkpoints.py")
 
+    def test_analyze_eval_help(self) -> None:
+        self._assert_help("analyze_eval.py")
+
     def test_run_remote_pipeline_help(self) -> None:
         self._assert_help("run_remote_pipeline.py")
 
@@ -41,6 +44,9 @@ class EntrypointHelpTests(unittest.TestCase):
 
     def test_dashboard_help(self) -> None:
         self._assert_help("dashboard.py")
+
+    def test_colab_run_t4_free_help(self) -> None:
+        self._assert_help(str(Path("colab") / "run_t4_free.py"))
 
 
 if __name__ == "__main__":

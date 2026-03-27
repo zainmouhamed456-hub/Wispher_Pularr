@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import unittest
+from unittest import mock
 
+from whisper_pularr import runtime as runtime_module
 from whisper_pularr.runtime import runtime_from_hardware_report
 
 
@@ -26,6 +28,12 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(runtime.per_device_eval_batch_size, 4)
         self.assertEqual(runtime.pseudo_label_batch_size, 4)
         self.assertEqual(runtime.profile, "low_vram")
+
+    def test_detect_local_runtime_handles_missing_google_namespace(self) -> None:
+        with mock.patch.object(runtime_module, "find_spec", side_effect=ModuleNotFoundError("google")):
+            runtime = runtime_module.runtime_from_optional_report(None)
+
+        self.assertEqual(runtime.profile, "cpu")
 
 
 if __name__ == "__main__":

@@ -9,10 +9,15 @@ except ImportError:
     AutoModelForSpeechSeq2Seq = None
     AutoProcessor = None
 
-from whisper_pularr.data import load_waxal_asr_dataset, save_json
+from whisper_pularr.data import load_asr_split, save_json
 from whisper_pularr.eval_utils import evaluate_long_form_dataset
 from whisper_pularr.runtime import runtime_from_optional_report
-from whisper_pularr.settings import DEFAULT_DATASET_CONFIG, DEFAULT_DATASET_NAME, DEFAULT_WHISPER_LANGUAGE_HINT
+from whisper_pularr.settings import (
+    DEFAULT_DATASET_CONFIG,
+    DEFAULT_DATASET_NAME,
+    DEFAULT_EVAL_CHUNK_LENGTH_SECONDS,
+    DEFAULT_WHISPER_LANGUAGE_HINT,
+)
 from whisper_pularr.whisper_prompt import configure_whisper_prompt, resolve_whisper_language
 
 
@@ -32,6 +37,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cache-dir", default=None)
     parser.add_argument("--output-path", default=None)
     parser.add_argument("--max-samples", type=int, default=None)
+    parser.add_argument("--generation-num-beams", type=int, default=None)
+    parser.add_argument("--evaluation-batch-size", type=int, default=None)
+    parser.add_argument("--chunk-length-s", type=int, default=None)
     return parser.parse_args()
 
 
@@ -39,8 +47,12 @@ def main() -> None:
     args = parse_args()
     _require_eval_runtime()
     runtime = runtime_from_optional_report(args.hardware_report)
-    dataset = load_waxal_asr_dataset(args.dataset_name, args.dataset_config, cache_dir=args.cache_dir or runtime.cache_root)
-    split = dataset[args.split]
+    split = load_asr_split(
+        args.dataset_name,
+        args.dataset_config,
+        split=args.split,
+        cache_dir=args.cache_dir or runtime.cache_root,
+    )
     if args.max_samples:
         split = split.select(range(min(args.max_samples, len(split))))
 
@@ -57,12 +69,18 @@ def main() -> None:
         runtime_config=runtime,
         output_path=output_path,
         language=language,
+        chunk_length_s=int(args.chunk_length_s or DEFAULT_EVAL_CHUNK_LENGTH_SECONDS),
+        evaluation_batch_size=args.evaluation_batch_size,
+        generation_num_beams=args.generation_num_beams,
     )
     summary = {
         "split": args.split,
         "requested_whisper_language": args.whisper_language,
         "resolved_whisper_language": language,
         "output_path": output_path,
+        "generation_num_beams": int(args.generation_num_beams or getattr(runtime, "generation_num_beams", 1) or 1),
+        "evaluation_batch_size": int(args.evaluation_batch_size or getattr(runtime, "evaluation_batch_size", 8) or 8),
+        "chunk_length_s": int(args.chunk_length_s or DEFAULT_EVAL_CHUNK_LENGTH_SECONDS),
         "metrics": payload["metrics"],
         "sample_count": payload["sample_count"],
     }

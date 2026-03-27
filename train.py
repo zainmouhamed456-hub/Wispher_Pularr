@@ -154,6 +154,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model-id", default=DEFAULT_TRAINABLE_MODEL)
     parser.add_argument("--whisper-language", default=DEFAULT_WHISPER_LANGUAGE_HINT)
     parser.add_argument("--base-checkpoint", default=None)
+    parser.add_argument("--resume-from-checkpoint", default=None)
     parser.add_argument("--pseudo-labels-path", default=None)
     parser.add_argument("--hardware-report", default=None)
     parser.add_argument("--cache-dir", default=None)
@@ -627,7 +628,10 @@ def main() -> None:
         callbacks=[callback],
     )
 
-    train_result = trainer.train()
+    train_kwargs: dict[str, Any] = {}
+    if args.resume_from_checkpoint:
+        train_kwargs["resume_from_checkpoint"] = args.resume_from_checkpoint
+    train_result = trainer.train(**train_kwargs)
 
     final_model_dir = output_dir / "final_model"
     trainer.save_model(str(final_model_dir))
@@ -658,6 +662,7 @@ def main() -> None:
         "validation_samples_full_eval": len(validation_for_full_eval),
         "model_source": model_source,
         "resolved_base_checkpoint": resolved_base_checkpoint,
+        "resume_from_checkpoint": args.resume_from_checkpoint,
         "final_model_dir": str(final_model_dir),
         "best_full_eval_dir": callback.state.best_model_dir,
         "best_full_eval_metrics_path": callback.state.best_metrics_path,

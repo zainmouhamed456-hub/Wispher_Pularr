@@ -165,7 +165,10 @@ def runtime_from_hardware_report(report: dict[str, Any], output_root: str | None
 def _detect_local_runtime() -> RuntimeConfig:
     is_colab = bool(os.environ.get("COLAB_RELEASE_TAG") or os.environ.get("COLAB_GPU"))
     if not is_colab:
-        is_colab = find_spec("google.colab") is not None or Path("/content").exists()
+        try:
+            is_colab = find_spec("google.colab") is not None or Path("/content").exists()
+        except ModuleNotFoundError:
+            is_colab = Path("/content").exists()
 
     chosen_root = "/content" if is_colab and Path("/content").exists() else str(Path.home())
     physical_cores = os.cpu_count() or 8

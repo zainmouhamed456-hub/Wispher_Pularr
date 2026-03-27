@@ -118,24 +118,27 @@ def evaluate_long_form_dataset(
     output_path: str | None = None,
     language: str | None = None,
     chunk_length_s: int = DEFAULT_EVAL_CHUNK_LENGTH_SECONDS,
+    evaluation_batch_size: int | None = None,
+    generation_num_beams: int | None = None,
 ) -> dict[str, Any]:
     if pipeline is None or torch is None:
         raise RuntimeError("transformers and torch are required for long-form evaluation.")
     bare_model = unwrap_model(model)
     bare_model.eval()
     device = 0 if torch.cuda.is_available() else -1
+    effective_batch_size = max(int(evaluation_batch_size or getattr(runtime_config, "evaluation_batch_size", 8)), 1)
     asr_pipeline = pipeline(
         task="automatic-speech-recognition",
         model=bare_model,
         tokenizer=processor.tokenizer,
         feature_extractor=processor.feature_extractor,
         chunk_length_s=chunk_length_s,
-        batch_size=getattr(runtime_config, "evaluation_batch_size", 8),
+        batch_size=effective_batch_size,
         torch_dtype=_pipeline_dtype(runtime_config),
         device=device,
     )
     generate_kwargs: dict[str, Any] = {}
-    num_beams = int(getattr(runtime_config, "generation_num_beams", 1) or 1)
+    num_beams = max(int(generation_num_beams or getattr(runtime_config, "generation_num_beams", 1) or 1), 1)
     if num_beams > 1:
         generate_kwargs["num_beams"] = num_beams
     if language:
@@ -144,7 +147,7 @@ def evaluate_long_form_dataset(
     references: list[str] = []
     predictions: list[str] = []
     per_sample: list[dict[str, Any]] = []
-    batch_size = max(int(getattr(runtime_config, "evaluation_batch_size", 8)), 1)
+    batch_size = effective_batch_size
     rows = list(dataset)
     for start in range(0, len(rows), batch_size):
         batch_rows = rows[start : start + batch_size]
