@@ -1,0 +1,5 @@
+transformers>=4.47.0
+accelerate>=0.34.2
+librosa>=0.10.2
+soundfile>=0.12.1
+safetensors>=0.4.5
