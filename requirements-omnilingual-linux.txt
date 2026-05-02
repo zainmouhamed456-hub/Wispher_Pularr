@@ -1,0 +1,9 @@
+--extra-index-url https://fair.pkg.atmeta.com/fairseq2/whl/pt2.8.0/cpu
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+torch==2.8.0+cpu
+torchaudio==2.8.0+cpu
+omnilingual-asr==0.1.0
+datasets[audio]==3.2.0
+jiwer==3.0.5
+soundfile==0.13.1

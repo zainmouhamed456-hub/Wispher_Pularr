@@ -48,6 +48,9 @@ class EntrypointHelpTests(unittest.TestCase):
     def test_colab_run_t4_free_help(self) -> None:
         self._assert_help(str(Path("colab") / "run_t4_free.py"))
 
+    def test_colab_run_omnilingual_t4_free_help(self) -> None:
+        self._assert_help(str(Path("colab") / "run_omnilingual_t4_free.py"))
+
 
 if __name__ == "__main__":
     unittest.main()

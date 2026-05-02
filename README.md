@@ -8,6 +8,13 @@ It includes:
 - `train.py`: supervised and self-training entrypoint with long-form validation and stop rules
 - `pseudo_label.py`: pseudo-label generation for the `unlabeled` split
 - `evaluate.py`: standalone long-form evaluation
+- `evaluate_omnilingual.py`: Meta Omnilingual ASR WER/CER evaluation entrypoint
+- `colab/run_omnilingual_t4_free.py`: Colab T4 orchestration for Omnilingual CTC 300M Pularr fine-tuning
+- `colab/Omnilingual_Pularr_T4_Free.ipynb`: ready-to-run Omnilingual Colab notebook
+- `colab/OMNILINGUAL_T4_FREE_RUNBOOK.md`: Omnilingual Colab session guide
+- `requirements-omnilingual-linux.txt`: Linux/WSL dependency set for Meta Omnilingual ASR evaluation
+- `scripts/setup_omnilingual_eval.sh`: creates a Linux/WSL Omnilingual ASR environment using Meta's fairseq2 wheel index
+- `Dockerfile.omnilingual`: optional Linux container for Omnilingual ASR dependency setup
 - `compare_checkpoints.py`: fixed-slice plus full-split comparison harness for multiple checkpoints
 - `run_remote_pipeline.py`: SSH-driven orchestration for setup, supervised trials, pseudo-labeling, sequential phase 2 training across manifest snapshots, and artifact collection
 - `run_self_train_sequence.py`: runs self-training sequentially across generated pseudo-label manifest snapshots
@@ -42,6 +49,83 @@ bash remote/run_goal_h100_fast.sh /root/whisper-pularr google/WaxalNLP ful_asr o
 bash colab/bootstrap_t4_free.sh
 bash colab/run_t4_free.sh /content/whisper-pularr google/WaxalNLP ful_asr openai/whisper-small openai/whisper-large-v3
 python dashboard.py --root . --host 127.0.0.1 --port 8787
+```
+
+## Meta Omnilingual ASR setup
+
+Meta Omnilingual ASR depends on `fairseq2`, which depends on the native
+`fairseq2n` wheel. The compatible `fairseq2n==0.6` wheels are published for
+Linux on Meta's fairseq2 index, not for native Windows Python. On Windows, run
+this part of the workflow from WSL/Linux:
+
+```bash
+bash scripts/setup_omnilingual_eval.sh
+```
+
+Then run a small Pularr validation eval:
+
+```bash
+source .venv-omni/bin/activate
+python evaluate_omnilingual.py --split validation --streaming --max-samples 10 --output-path reports/omnilingual_validation_10_eval.json
+```
+
+The default model card is `omniASR_CTC_300M`, and the default language hint is
+`ful_Latn`. Pass `--lang fuv_Latn`, `--lang fub_Latn`, or another supported
+Omnilingual language ID if you want to test a narrower Fulfulde/Pulaar variant.
+
+The script creates `.venv-omni`, installs `omnilingual-asr==0.1.0` with
+`torch==2.8.0` / `torchaudio==2.8.0`, and uses:
+
+```bash
+--extra-index-url https://fair.pkg.atmeta.com/fairseq2/whl/pt2.8.0/cpu
+```
+
+Native Windows users can run `scripts/setup_omnilingual_eval.ps1` to print the
+WSL commands instead of hitting pip's unresolved `fairseq2n` error.
+
+If Docker is available on a Linux-capable machine, the same dependency fix can
+be verified in a container:
+
+```bash
+docker build -f Dockerfile.omnilingual -t whisper-pularr-omni .
+docker run --rm -it -v "$PWD:/workspace" whisper-pularr-omni
+```
+
+## Meta Omnilingual ASR Colab fine-tuning
+
+For a Google Colab Free T4 workflow that fine-tunes Meta Omnilingual CTC 300M on
+Waxal Pularr, open `colab/Omnilingual_Pularr_T4_Free.ipynb` or follow
+`colab/OMNILINGUAL_T4_FREE_RUNBOOK.md`.
+
+The main command is:
+
+```bash
+python colab/run_omnilingual_t4_free.py all \
+  --dataset-name google/WaxalNLP \
+  --dataset-config ful_asr \
+  --lang ful_Latn \
+  --runs-root /content/drive/MyDrive/omnilingual-pularr-runs
+```
+
+The workflow prepares Omnilingual parquet data under Drive, generates the
+`waxal_ful_pularr` asset card and CTC recipe configs under the run directory,
+and promotes trained checkpoints only when normalized validation WER improves
+with normalized CER as the tie-breaker.
+
+Before running the notebook or launcher in a fresh Colab runtime, bootstrap the
+Omnilingual dependency stack:
+
+```bash
+bash colab/bootstrap_omnilingual_t4_free.sh /content/whisper-pularr /content/drive/MyDrive/omnilingual-pularr-runs
+```
+
+Inside a notebook kernel, the import guard can also repair
+`ModuleNotFoundError: No module named 'omnilingual_asr'` without requiring a
+runtime restart:
+
+```python
+from colab.omnilingual_import_guard import print_omnilingual_status
+torch, ASRInferencePipeline = print_omnilingual_status()
 ```
 
 ## Notes

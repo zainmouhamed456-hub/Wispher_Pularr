@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 .venv/
+.venv-omni/
 artifacts/
 runs/
 reports/
@@ -9,5 +10,7 @@ downloads/
 *.zip
 *.safetensors
 *.log
+.tmp_pip*/
+.tmp_omni_repo/
 run_summary.json
 best_full_eval_summary.json
